@@ -91,3 +91,48 @@
     (ok true)
   )
 )
+
+;; Fund an existing payment channel
+(define-public (fund-channel 
+  (channel-id (buff 32)) 
+  (participant-b principal)
+  (additional-funds uint)
+)
+  (let 
+    (
+      (channel (unwrap! 
+        (map-get? payment-channels {
+          channel-id: channel-id, 
+          participant-a: tx-sender, 
+          participant-b: participant-b
+        }) 
+        ERR-CHANNEL-NOT-FOUND
+      ))
+    )
+    ;; Validate inputs
+    (asserts! (is-valid-channel-id channel-id) ERR-INVALID-INPUT)
+    (asserts! (is-valid-deposit additional-funds) ERR-INVALID-INPUT)
+    (asserts! (not (is-eq tx-sender participant-b)) ERR-INVALID-INPUT)
+
+    ;; Validate channel is open
+    (asserts! (get is-open channel) ERR-CHANNEL-CLOSED)
+
+    ;; Transfer additional funds
+    (try! (stx-transfer? additional-funds tx-sender (as-contract tx-sender)))
+
+    ;; Update channel state
+    (map-set payment-channels 
+      {
+        channel-id: channel-id, 
+        participant-a: tx-sender, 
+        participant-b: participant-b
+      }
+      (merge channel {
+        total-deposited: (+ (get total-deposited channel) additional-funds),
+        balance-a: (+ (get balance-a channel) additional-funds)
+      })
+    )
+
+    (ok true)
+  )
+)
