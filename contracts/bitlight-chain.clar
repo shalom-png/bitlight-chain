@@ -225,3 +225,43 @@
     (ok true)
   )
 )
+
+;; DISPUTE RESOLUTION MODULE
+;; Implements Bitcoin-style penalty system with Stacks-enhanced features
+
+(define-public (initiate-unilateral-close 
+  (channel-id (buff 32)) 
+  (participant-b principal)
+  (proposed-balance-a uint)
+  (proposed-balance-b uint)
+  (signature (buff 65))
+)
+  (let 
+    (
+      (channel (unwrap! (map-get? payment-channels {
+          channel-id: channel-id, 
+          participant-a: tx-sender, 
+          participant-b: participant-b
+        }) ERR-CHANNEL-NOT-FOUND))
+      (total-channel-funds (get total-deposited channel))
+      (message (concat 
+        (concat channel-id (uint-to-buff proposed-balance-a))
+        (uint-to-buff proposed-balance-b)))
+    )
+    (asserts! (get is-open channel) ERR-CHANNEL-CLOSED)
+    (asserts! (verify-signature message signature tx-sender) ERR-INVALID-SIGNATURE)
+    (asserts! (is-eq total-channel-funds (+ proposed-balance-a proposed-balance-b)) 
+              ERR-INSUFFICIENT-FUNDS)
+
+    ;; Set Bitcoin-style locktime (144 blocks = ~24 hours)
+    (map-set payment-channels 
+      { channel-id: channel-id, participant-a: tx-sender, participant-b: participant-b }
+      (merge channel {
+        dispute-deadline: (+ stacks-block-height u144),
+        balance-a: proposed-balance-a,
+        balance-b: proposed-balance-b
+      })
+    )
+    (ok true)
+  )
+)
