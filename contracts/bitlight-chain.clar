@@ -265,3 +265,54 @@
     (ok true)
   )
 )
+
+;; Resolve unilateral channel close
+(define-public (resolve-unilateral-close 
+  (channel-id (buff 32)) 
+  (participant-b principal)
+)
+  (let 
+    (
+      (channel (unwrap! 
+        (map-get? payment-channels {
+          channel-id: channel-id, 
+          participant-a: tx-sender, 
+          participant-b: participant-b
+        }) 
+        ERR-CHANNEL-NOT-FOUND
+      ))
+      (proposed-balance-a (get balance-a channel))
+      (proposed-balance-b (get balance-b channel))
+    )
+    ;; Validate inputs
+    (asserts! (is-valid-channel-id channel-id) ERR-INVALID-INPUT)
+    (asserts! (not (is-eq tx-sender participant-b)) ERR-INVALID-INPUT)
+
+    ;; Ensure dispute period has passed
+    (asserts! 
+      (>= stacks-block-height (get dispute-deadline channel)) 
+      ERR-DISPUTE-PERIOD
+    )
+
+    ;; Transfer funds based on proposed balances
+    (try! (as-contract (stx-transfer? proposed-balance-a tx-sender tx-sender)))
+    (try! (as-contract (stx-transfer? proposed-balance-b tx-sender participant-b)))
+
+    ;; Close the channel
+    (map-set payment-channels 
+      {
+        channel-id: channel-id, 
+        participant-a: tx-sender, 
+        participant-b: participant-b
+      }
+      (merge channel {
+        is-open: false,
+        balance-a: u0,
+        balance-b: u0,
+        total-deposited: u0
+      })
+    )
+
+    (ok true)
+  )
+)
